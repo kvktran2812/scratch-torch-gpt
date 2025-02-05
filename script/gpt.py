@@ -77,7 +77,14 @@ class GPT(nn.Module):
         self.lm_head = nn.Linear(embedding_size, vocab_size)
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x):
+        # init all weights
+        self.apply(self._init_weights)
+        # apply special scaled init to the residual projections, per GPT-2 paper
+        for pn, p in self.named_parameters():
+            if pn.endswith('c_proj.weight'):
+                torch.nn.init.normal_(p, mean=0.0, std=0.02/math.sqrt(2 * config.n_layer))
+
+    def forward(self, x, targets=None):
         device = x.device
         B,T = x.size()
         pos = torch.arange(0, T, dtype=torch.long, device=device)
@@ -87,5 +94,33 @@ class GPT(nn.Module):
         x = self.dropout(token_embedding + pos_embedding)
         x = self.blocks(x)
         x = self.ln_f(x)
-        x = self.lm_head(x)
-        return x
+
+        if targets is not None:
+            logits = self.lm_head(x)
+            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1))
+        else:
+            logits = self.lm_head(x[:, [-1], :])
+            loss = None
+        return logits, loss
+
+    def _init_weights(self, module):
+        if isinstance(module, nn.Linear):
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+            if module.bias is not None:
+                torch.nn.init.zeros_(module.bias)
+        elif isinstance(module, nn.Embedding):
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+
+    def generate(self, model, idx, max_new_tokens, block_size: int = 32, temperature=1.0, top_k=None): 
+        for _ in range(max_new_tokens):
+            idx_cond = idx if idx.size(1) <= block_size else idx[:, -block_size:]
+            logits, _ = model(idx_cond)
+            logits = logits[:, -1, :] / temperature
+            if top_k is not None:
+                v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
+                logits[logits < v[:, [-1]]] = -float('Inf')
+            probs = F.softmax(logits, dim=-1)
+            idx_next = torch.multinomial(probs, num_samples=1)
+            idx = torch.cat((idx, idx_next), dim=1)
+
+        return idx
