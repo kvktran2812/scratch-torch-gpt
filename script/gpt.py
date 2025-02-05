@@ -111,10 +111,11 @@ class GPT(nn.Module):
         elif isinstance(module, nn.Embedding):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
-    def generate(self, model, idx, max_new_tokens, block_size: int = 32, temperature=1.0, top_k=None): 
+    @torch.no_grad()
+    def generate(self, idx, max_new_tokens, block_size: int = 32, temperature=1.0, top_k=None): 
         for _ in range(max_new_tokens):
             idx_cond = idx if idx.size(1) <= block_size else idx[:, -block_size:]
-            logits, _ = model(idx_cond)
+            logits, _ = self(idx_cond)
             logits = logits[:, -1, :] / temperature
             if top_k is not None:
                 v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
