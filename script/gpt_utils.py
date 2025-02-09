@@ -4,8 +4,8 @@ from torch.nn import functional as F
 import time
 import os
 
-def load_truyen_kieu_dataset():
-    with open('data/truyen_kieu_clean.txt', 'r', encoding='utf-8') as f:
+def load_truyen_kieu_dataset(text_file: str = 'data/truyen_kieu_clean.txt'):
+    with open(text_file, 'r', encoding='utf-8') as f:
         text = f.read()
 
     chars = sorted(list(set(text)))
@@ -45,6 +45,8 @@ def beautiful_print(model, decoder, max_new_tokens, block_size: int = 32, temper
     for i in range(1, len(poem)):
         print(poem[i], end='')
         time.sleep(0.05)
+
+    return poem
 
 @torch.no_grad()
 def eval(model, val_data, device: str = 'cpu', n_iters: int = 100):
@@ -107,11 +109,13 @@ def train(
     
             if step % save_checkpoint == 0:
                 torch.save(model.state_dict(), f"{save_dir}/checkpoint_{int(save)}.pth")
+                save += 1
 
     # Final eval:
     eval_loss = eval(model, val_data, device, total_eval)
     print("*" * 10)
     avg_loss = sum(loss_history) / n_steps
     print(f"Final eval --- Step: {n_steps} - Training Loss: {avg_loss:.4f} - Eval Loss: {eval_loss:.4f}")
+    torch.save(model.state_dict(), f"{save_dir}/checkpoint_final.pth")
 
     return loss_history, eval_loss
