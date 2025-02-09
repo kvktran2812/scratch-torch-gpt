@@ -119,3 +119,45 @@ def train(
     torch.save(model.state_dict(), f"{save_dir}/checkpoint_final.pth")
 
     return loss_history, eval_loss
+
+def generate_text(model, decoder, num_sentences=4, device="cuda", temperature=1.0, top_k=None, block_size=128):
+    word_counts = [6, 8]  # Alternate between 6 and 8 words
+    context = torch.zeros((1, 1), dtype=torch.long, device=device)
+    sentences = []
+
+    model.eval()
+    for i in range(num_sentences):
+        idx = context
+        word_count = word_counts[i % 2]  # Alternate sentence lengths
+        char_count = 0
+        current_word_count = 0
+        sentence = ""
+
+        while current_word_count < word_count:
+            idx_cond = idx if idx.size(1) <= block_size else idx[:, -block_size:]
+            logits, _ = model(idx_cond)
+            logits = logits[:, -1, :] / temperature
+            
+            if top_k is not None:
+                v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
+                logits[logits < v[:, [-1]]] = -float('Inf')
+            probs = F.softmax(logits, dim=-1)
+            idx_next = torch.multinomial(probs, num_samples=1)
+            char = decoder([idx_next.item()])
+
+            if char == "\n":
+                continue
+
+            # Count words based on spaces
+            if char == " " and char_count > 1:
+                current_word_count += 1
+
+            sentence += char
+            char_count += 1
+            idx = torch.cat((idx, idx_next), dim=1)
+
+        # append new line here:
+        idx = torch.cat((idx, torch.zeros((1, 1), device='cuda:0', dtype=torch.long)), dim=1)
+        sentences.append(sentence.strip())
+
+    return sentences
